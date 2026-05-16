@@ -1,0 +1,6 @@
+{
+  "name": "DevProductivity Match Coach",
+  "description": "Developer Productivity Smart Coach using PR, Jira, and Deployment data to provide actionable insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
