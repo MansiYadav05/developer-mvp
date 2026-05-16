@@ -31,6 +31,7 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   
   const [meta, setMeta] = useState<{ developers: { id: string, name: string }[], months: string[] }>({ developers: [], months: [] });
+  const [rawData, setRawData] = useState<any>(null);
   const [selectedDevId, setSelectedDevId] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   
@@ -60,17 +61,18 @@ export default function App() {
         method: 'POST',
         body: formData
       });
-      if (res.ok) {
-        const data = await res.json();
-        setMeta({ developers: data.developers, months: data.months });
-        setIsDataLoaded(true);
-        setSelectedDevId('');
-        setSelectedMonth('');
-        setResults(null);
-      } else {
-        const text = await res.text();
-        throw new Error(`Server returned ${res.status}: ${text.substring(0, 500)}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Upload failed (${res.status}): ${errorText.slice(0, 100)}`);
       }
+      
+      const data = await res.json();
+      setMeta({ developers: data.developers, months: data.months });
+      setRawData(data.raw); // Store facts for next request
+      setIsDataLoaded(true);
+      setSelectedDevId('');
+      setSelectedMonth('');
+      setResults(null);
     } catch (e: any) {
       console.error("Upload failed:", e);
       alert(e.message);
@@ -86,12 +88,16 @@ export default function App() {
       const res = await fetch('/api/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ developerId: selectedDevId, month: selectedMonth })
+        body: JSON.stringify({ developerId: selectedDevId, month: selectedMonth, rawData })
       });
-      if (res.ok) {
-        const data = await res.json();
-        setResults(data);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Calculation failed: ${errorText.slice(0, 100)}`);
       }
+
+      const data = await res.json();
+      setResults(data);
     } catch (e) {
       console.error("Calculation failed", e);
     } finally {
@@ -321,6 +327,3 @@ function MetricCard({ title, value, trend, color }: { title: string, value: stri
     </div>
   );
 }
-
-
-

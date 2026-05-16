@@ -77,22 +77,22 @@ async function startServer() {
     };
 
     try {
-      if (files.developers) developers = await parseCSV(files.developers[0].buffer);
-      if (files.jira) jiraIssues = await parseCSV(files.jira[0].buffer);
-      if (files.prs) pullRequests = await parseCSV(files.prs[0].buffer);
-      if (files.deployments) deployments = await parseCSV(files.deployments[0].buffer);
-      if (files.bugs) bugReports = await parseCSV(files.bugs[0].buffer);
+      const devs = files.developers ? await parseCSV(files.developers[0].buffer) : [];
+      const jira = files.jira ? await parseCSV(files.jira[0].buffer) : [];
+      const prs = files.prs ? await parseCSV(files.prs[0].buffer) : [];
+      const deploys = files.deployments ? await parseCSV(files.deployments[0].buffer) : [];
+      const bugs = files.bugs ? await parseCSV(files.bugs[0].buffer) : [];
 
-      const devList = developers.map((d: any) => ({ 
+      const devList = devs.map((d: any) => ({ 
         id: String(d.developer_id).trim(), 
         name: String(d.developer_name).trim() 
       })).filter(d => d.id && d.name);
 
       const monthsSet = new Set([
-        ...jiraIssues.map(i => String(i.month_done).trim()),
-        ...pullRequests.map(p => String(p.month).trim()),
-        ...deployments.map(d => String(d.month_deployed).trim()),
-        ...bugReports.map(b => String(b.month).trim())
+        ...jira.map(i => String(i.month_done).trim()),
+        ...prs.map(p => String(p.month).trim()),
+        ...deploys.map(d => String(d.month_deployed).trim()),
+        ...bugs.map(b => String(b.month_found).trim())
       ]);
       const months = Array.from(monthsSet).filter(m => m && m !== "undefined").sort();
 
@@ -100,8 +100,16 @@ async function startServer() {
 
       res.json({ 
         message: "Files processed successfully", 
-        developers: devList, 
-        months 
+        developers: devList,
+        months,
+        // Return raw data to the client because Vercel is stateless
+        raw: {
+          developers: devs,
+          jiraIssues: jira,
+          pullRequests: prs,
+          deployments: deploys,
+          bugReports: bugs
+        }
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -110,7 +118,8 @@ async function startServer() {
 
   // API to calculate metrics and reasoning
   app.post("/api/calculate", async (req, res) => {
-    const { developerId, month } = req.body;
+    // Accept the raw data back from the client
+    const { developerId, month, rawData } = req.body;
 
     if (!developerId || !month) {
       return res.status(400).json({ error: "Developer ID and Month are required" });
@@ -119,10 +128,18 @@ async function startServer() {
     const devIdStr = String(developerId).trim();
     const monthStr = String(month).trim();
 
-    const devJira = jiraIssues.filter(i => String(i.developer_id).trim() === devIdStr && String(i.month_done).trim() === monthStr);
-    const devPRs = pullRequests.filter(p => String(p.developer_id).trim() === devIdStr && String(p.month).trim() === monthStr && String(p.status).toLowerCase().trim() === 'merged');
-    const devDeploys = deployments.filter(d => String(d.developer_id).trim() === devIdStr && String(d.month_deployed).trim() === monthStr && String(d.status).toLowerCase().trim() === 'success');
-    const devBugs = bugReports.filter(b => String(b.developer_id).trim() === devIdStr && String(b.month_found).trim() === monthStr);
+    const { 
+      developers: rawDevs = [], 
+      jiraIssues: rawJira = [], 
+      pullRequests: rawPRs = [], 
+      deployments: rawDeploys = [], 
+      bugReports: rawBugs = [] 
+    } = rawData || {};
+
+    const devJira = rawJira.filter((i: any) => String(i.developer_id).trim() === devIdStr && String(i.month_done).trim() === monthStr);
+    const devPRs = rawPRs.filter((p: any) => String(p.developer_id).trim() === devIdStr && String(p.month).trim() === monthStr && String(p.status).toLowerCase().trim() === 'merged');
+    const devDeploys = rawDeploys.filter((d: any) => String(d.developer_id).trim() === devIdStr && String(d.month_deployed).trim() === monthStr && String(d.status).toLowerCase().trim() === 'success');
+    const devBugs = rawBugs.filter((b: any) => String(b.developer_id).trim() === devIdStr && String(b.month_found).trim() === monthStr);
 
     const issuesDone = devJira.filter(i => String(i.status).toLowerCase().trim() === 'done').length;
     const totalCycleTimeDays = devJira.reduce((sum, i) => sum + (parseFloat(i.cycle_time_days) || 0), 0);
@@ -141,7 +158,7 @@ async function startServer() {
     const totalReviewWaitHours = devPRs.reduce((sum, p) => sum + (parseFloat(p.review_wait_hours) || 0), 0);
     const avgReviewWaitHours = prThroughput > 0 ? totalReviewWaitHours / prThroughput : 0;
 
-    const devInfo = developers.find(d => String(d.developer_id).trim() === devIdStr);
+    const devInfo = rawDevs.find((d: any) => String(d.developer_id).trim() === devIdStr);
     const devName = devInfo?.developer_name || "Unknown Developer";
     const teamName = devInfo?.team || devInfo?.team_name || "Engineering Hub";
 
@@ -257,9 +274,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
