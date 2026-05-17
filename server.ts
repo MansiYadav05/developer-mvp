@@ -29,7 +29,7 @@ let bugReports: any[] = [];
 const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   app.use(express.json());
@@ -274,11 +274,9 @@ async function startServer() {
     });
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  }
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT} (Mode: ${process.env.NODE_ENV || 'development'})`);
+  });
 }
 
 startServer();
